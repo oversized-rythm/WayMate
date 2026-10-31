@@ -1,7 +1,9 @@
 package com.waymate.backend.controller;
 
+import com.waymate.backend.dto.LoginRequest;
+import com.waymate.backend.dto.LoginResponse;
 import com.waymate.backend.dto.RegisterRequest;
-import com.waymate.backend.entity.User;
+
 import com.waymate.backend.service.UserService;
 
 import org.springframework.http.HttpStatus;
@@ -24,12 +26,16 @@ public class AuthController {
     @PostMapping("/register")
     public ResponseEntity<String>register(
             @RequestBody RegisterRequest request){
-        User user = userService.registerUser(request);
-
+        userService.registerUser(request);
         return ResponseEntity
                 .status(HttpStatus.CREATED)
                 .body("User Registered Successfully!");
     }
 
+    @PostMapping("/login")
+    public ResponseEntity<LoginResponse>login(@RequestBody LoginRequest request){
+        LoginResponse response=userService.loginUser(request);
+        return ResponseEntity.ok(response);
+    }
 
 }
