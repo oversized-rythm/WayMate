@@ -60,5 +60,12 @@ public class AuthController {
         return ResponseEntity.ok(response);
     }
 
+    @PostMapping("/logout")
+    public ResponseEntity<String>logout(
+            @RequestBody RefreshTokenRequest request, Authentication authentication){
+        UUID userId=(UUID) authentication.getPrincipal();
+        refreshTokenService.revokeRefreshToken(request.getRefreshToken(),userId);
 
+        return ResponseEntity.ok("Logged out successfully!");
+    }
 }
