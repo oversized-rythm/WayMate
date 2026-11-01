@@ -13,11 +13,13 @@ public class UserService {
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
     private final JwtService jwtService;
+    private final RefreshTokenService refreshTokenService;
 
-    public UserService(UserRepository userRepository, PasswordEncoder passwordEncoder,JwtService jwtService){
+    public UserService(UserRepository userRepository, PasswordEncoder passwordEncoder,JwtService jwtService,RefreshTokenService refreshTokenService){
         this.userRepository=userRepository;
         this.passwordEncoder=passwordEncoder;
         this.jwtService=jwtService;
+        this.refreshTokenService=refreshTokenService;
     }
     public User getUserByEmail(String email){
         return userRepository.findByEmail(email)
@@ -56,9 +58,11 @@ public class UserService {
             throw new RuntimeException("Account is Inactive");
         }
 
+
         //Generate JWT after a successful Login
-        String token = jwtService.generateToken(user.getUserId());
-        return new LoginResponse(token, "Bearer");
+        String accessToken = jwtService.generateToken(user.getUserId());
+        String refreshToken=refreshTokenService.createRefreshToken(user, "Unknown device");
+        return new LoginResponse(accessToken, "Bearer",refreshToken);
     }
 
 }

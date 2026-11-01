@@ -1,9 +1,12 @@
 package com.waymate.backend.controller;
 
-import com.waymate.backend.dto.LoginRequest;
-import com.waymate.backend.dto.LoginResponse;
-import com.waymate.backend.dto.RegisterRequest;
+import com.waymate.backend.dto.*;
 
+import java.util.UUID;
+
+
+import com.waymate.backend.service.RefreshTokenService;
+import org.springframework.security.core.Authentication;
 import com.waymate.backend.service.UserService;
 
 import org.springframework.http.HttpStatus;
@@ -12,14 +15,18 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.GetMapping;
 
 @RestController
 @RequestMapping("/api/auth")
 public class AuthController {
     private final UserService userService;
 
-    public AuthController(UserService userService){
+    private final RefreshTokenService refreshTokenService;
+    public AuthController(UserService userService, RefreshTokenService refreshTokenService){
         this.userService=userService;
+
+        this.refreshTokenService=refreshTokenService;
     }
 
     //Register a new User
@@ -37,5 +44,21 @@ public class AuthController {
         LoginResponse response=userService.loginUser(request);
         return ResponseEntity.ok(response);
     }
+    //Temporary testing endpoint!
+    //Get the currently authenticated user's ID
+    @GetMapping("/me")
+    public ResponseEntity<UUID> getCurrentUser(Authentication authentication){
+        UUID userId=(UUID)authentication.getPrincipal();
+        return ResponseEntity.ok(userId);
+    }
+
+    //Generate the new access and refresh tokens
+    @PostMapping("/refresh")
+    public  ResponseEntity<RefreshTokenResponse>refresh(
+            @RequestBody RefreshTokenRequest request){
+        RefreshTokenResponse response=refreshTokenService.refreshTokens(request.getRefreshToken());
+        return ResponseEntity.ok(response);
+    }
+
 
 }
