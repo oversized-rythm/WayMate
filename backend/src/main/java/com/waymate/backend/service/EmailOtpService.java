@@ -5,14 +5,19 @@ import com.waymate.backend.dto.RequestOtpResponse;
 import com.waymate.backend.dto.VerifyOtpRequest;
 import com.waymate.backend.dto.VerifyOtpResponse;
 import com.waymate.backend.entity.EmailOtp;
+import com.waymate.backend.exception.ApiException;
 import com.waymate.backend.repository.EmailOtpRepository;
 import com.waymate.backend.repository.UserRepository;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;
 
 
+import javax.crypto.Mac;
+import javax.crypto.spec.SecretKeySpec;
 import java.nio.charset.StandardCharsets;
+import java.security.GeneralSecurityException;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.security.SecureRandom;
@@ -37,6 +42,9 @@ public class EmailOtpService {
     @Value("${brevo.sender.name}")
     private String senderName;
 
+    @Value("${otp.hmac.secret}")
+    private String otpHmacSecret;
+
     public EmailOtpService(EmailOtpRepository emailOtpRepository, WebClient webClient, UserRepository userRepository){
         this.emailOtpRepository= emailOtpRepository;
         this.webClient=webClient;
@@ -52,15 +60,33 @@ public class EmailOtpService {
     }
 
     //SHA-256 hashed OTP
+//    private String hashOtp(String otp){
+//        try{
+//            MessageDigest digest=MessageDigest.getInstance("SHA-256");
+//            byte[]hash= digest.digest(otp.getBytes(StandardCharsets.UTF_8));
+//
+//            return Base64.getEncoder().encodeToString(hash);
+//        }catch (NoSuchAlgorithmException e){
+//            throw new RuntimeException("Error Hashing OTP" ,e);
+//        }
+//    }
+    //HMAC hashed OTP
     private String hashOtp(String otp){
-        try{
-            MessageDigest digest=MessageDigest.getInstance("SHA-256");
-            byte[]hash= digest.digest(otp.getBytes(StandardCharsets.UTF_8));
+            try{
+                Mac mac = Mac.getInstance("HmacSHA256");
 
-            return Base64.getEncoder().encodeToString(hash);
-        }catch (NoSuchAlgorithmException e){
-            throw new RuntimeException("Error Hashing OTP" ,e);
-        }
+                SecretKeySpec secretKey = new SecretKeySpec(
+                        otpHmacSecret.getBytes(StandardCharsets.UTF_8),
+                        "HmacSHA256"
+                );
+                mac.init(secretKey);
+
+                byte[] hash = mac.doFinal(otp.getBytes(StandardCharsets.UTF_8));
+
+                return Base64.getEncoder().encodeToString(hash);
+            }catch (GeneralSecurityException e){
+                throw new IllegalStateException("Unable to hash OTP", e);
+            }
     }
 
     //email-sending method, connecting WayMate to Brevo
@@ -101,9 +127,12 @@ public class EmailOtpService {
 
     public RequestOtpResponse requestOtp(RequestOtpRequest request) {
         String email = request.getEmail().trim().toLowerCase(Locale.ROOT);
-        //checking for already registered email
+        // Prevent registration using an email that already has an account
         if(userRepository.existsByEmail(email)){
-            throw new RuntimeException("Email is already registered");
+            throw new ApiException(
+                    HttpStatus.CONFLICT,
+                    "Email is already registered"
+            );
         }
         //create otp and record
         String otp= generateOtp();
@@ -116,11 +145,21 @@ public class EmailOtpService {
         emailOtpRepository.deleteByEmail(email);
 
         //Save new OTP
-        emailOtpRepository.save(emailOtp);
+        EmailOtp savedOtp=emailOtpRepository.save(emailOtp);
 
         //Send OTP via Brevo
-        sendOtpEmail(email,otp);
-
+        try {
+            sendOtpEmail(email, otp);
+        }catch (Exception e){
+            //remove the OTP from DB if email delivery fails
+            emailOtpRepository.delete(savedOtp);
+            System.err.println("Brevo email sending failed: " + e.getMessage());
+            // Return 502 because an external email service failed.
+            throw new ApiException(
+                    HttpStatus.BAD_GATEWAY,
+                    "Unable to send verification email. Please try again later!"
+            );
+        }
         return new RequestOtpResponse("OTP sent successfully to your email.");
 
     }
@@ -129,26 +168,42 @@ public class EmailOtpService {
     public VerifyOtpResponse verifyOtp(VerifyOtpRequest request){
         String email = request.getEmail().trim().toLowerCase(Locale.ROOT);
 
-        //Validate OTP format
+        // Reject OTP values that don't contain exactly six digits.
         if (request.getOtp() == null || !request.getOtp().matches("\\d{6}")) {
-            throw new RuntimeException("OTP must be exactly 6 digits");
+            throw new ApiException(
+                    HttpStatus.BAD_REQUEST,
+                    "OTP must be exactly 6 digits."
+            );
         }
         //find the latest OTP record
         EmailOtp emailOtp= emailOtpRepository
                 .findTopByEmailOrderByCreatedAtDesc(email)
-                .orElseThrow(()->new RuntimeException("No OTP Found!"));
+                // Return 404 when no OTP record exists for the supplied email.
+                .orElseThrow(() -> new ApiException(
+                        HttpStatus.NOT_FOUND,
+                        "No OTP found. Please request a new OTP."
+                ));
 
-        //check if OTP is already verified
+        // Prevent the same OTP from being verified more than once.
         if(emailOtp.isVerified()){
-            throw new RuntimeException("OTP already verified!");
+            throw new ApiException(
+                    HttpStatus.CONFLICT,
+                    "OTP already verified!"
+            );
         }
-        //check OTP expiration
+        // Prevent users from verifying an OTP after its expiry time.
         if(!emailOtp.getExpiresAt().isAfter(LocalDateTime.now())){
-            throw new RuntimeException("OTP has expired!");
+            throw new ApiException(
+                    HttpStatus.GONE,
+                    "OTP has expired. Please request a new OTP."
+            );
         }
-        //check maximum attempts
+        // Stop OTP verification after five incorrect attempts.
         if(emailOtp.getAttempts()>=5){
-            throw new RuntimeException("Maximum OTP attempts exceeded!");
+            throw new ApiException(
+                    HttpStatus.TOO_MANY_REQUESTS,
+                    "Maximum OTP attempts exceeded. Please request a new OTP."
+            );
         }
         //hash the OTP by the user
         String enteredOtpHash= hashOtp(request.getOtp());
@@ -157,11 +212,14 @@ public class EmailOtpService {
                 emailOtp.getOtpHash().getBytes(StandardCharsets.UTF_8),
                 enteredOtpHash.getBytes(StandardCharsets.UTF_8)
         );
-        //handles incorrect OTP
+        // Reject an incorrect OTP while recording the failed attempt
         if(!isMatch){
             emailOtp.setAttempts(emailOtp.getAttempts()+1);
             emailOtpRepository.save(emailOtp);
-            return new VerifyOtpResponse("Invalid OT    P", false, null);
+            throw new ApiException(
+                    HttpStatus.BAD_REQUEST,
+                    "Invalid OTP. Please try again."
+            );
         }
 
         //mark OTP as verified

@@ -7,6 +7,7 @@ import java.util.UUID;
 
 import com.waymate.backend.service.EmailOtpService;
 import com.waymate.backend.service.RefreshTokenService;
+import jakarta.validation.Valid;
 import org.springframework.security.core.Authentication;
 import com.waymate.backend.service.UserService;
 
@@ -33,7 +34,7 @@ public class AuthController {
     //Register a new User
     @PostMapping("/register")
     public ResponseEntity<String>register(
-            @RequestBody RegisterRequest request){
+           @Valid @RequestBody RegisterRequest request){
         userService.registerUser(request);
         return ResponseEntity
                 .status(HttpStatus.CREATED)
@@ -41,7 +42,8 @@ public class AuthController {
     }
 
     @PostMapping("/login")
-    public ResponseEntity<LoginResponse>login(@RequestBody LoginRequest request){
+    public ResponseEntity<LoginResponse>login(
+            @Valid @RequestBody LoginRequest request){
         LoginResponse response=userService.loginUser(request);
         return ResponseEntity.ok(response);
     }
@@ -73,7 +75,7 @@ public class AuthController {
     //request OTP
     @PostMapping("/request-otp")
     public ResponseEntity<RequestOtpResponse> requestOtp(
-            @RequestBody RequestOtpRequest request) {
+            @Valid @RequestBody RequestOtpRequest request) {
 
         RequestOtpResponse response = emailOtpService.requestOtp(request);
         return ResponseEntity.ok(response);

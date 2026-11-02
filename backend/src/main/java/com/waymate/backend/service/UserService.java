@@ -5,9 +5,11 @@ import com.waymate.backend.dto.LoginResponse;
 import com.waymate.backend.dto.RegisterRequest;
 import com.waymate.backend.entity.EmailOtp;
 import com.waymate.backend.entity.User;
+import com.waymate.backend.exception.ApiException;
 import com.waymate.backend.repository.EmailOtpRepository;
 import com.waymate.backend.repository.UserRepository;
 import jakarta.transaction.Transactional;
+import org.springframework.http.HttpStatus;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
@@ -38,22 +40,33 @@ public class UserService {
     @Transactional
     public User registerUser(RegisterRequest request){
         String email = request.getEmail().trim().toLowerCase(Locale.ROOT);
-        //check if email already exists
+        // Prevent registration with an email that already has an account
         if(userRepository.existsByEmail(email)){
-            throw new RuntimeException("Email Already Registered!");
+            throw new ApiException(
+                    HttpStatus.CONFLICT,
+                    "Email is already registered."
+            );
         }
-        //Find latest OTP record for the email
+        // Ensure an OTP record exists for this email.
         EmailOtp emailOtp=emailOtpRepository
                 .findTopByEmailOrderByCreatedAtDesc(email)
-                .orElseThrow(()->new RuntimeException("Please verify your email first!"));
+                .orElseThrow(()->new ApiException(
+                        HttpStatus.FORBIDDEN,
+                        "Please verify your email first."));
 
-        //Check weather the OTP is verifeid
+        // Only allow registration after successful email verification.
         if(!emailOtp.isVerified()){
-            throw new RuntimeException("Please verify your email first!");
+            throw new ApiException(
+                    HttpStatus.FORBIDDEN,
+                    "Please verify your email first."
+            );
         }
-        //check weather the regisstration window expired
+        // Prevent registration if the email verification session has expired.
         if(emailOtp.getRegistrationExpiresAt()==null || !emailOtp.getRegistrationExpiresAt().isAfter(LocalDateTime.now())){
-            throw new RuntimeException("Registration session expired. Please verify your email again!");
+            throw new ApiException(
+                    HttpStatus.GONE,
+                    "Registration session expired. Please verify your email again."
+            );
         }
         //Creating a new user entity
         User user= new User();
@@ -76,20 +89,34 @@ public class UserService {
 
     //login an existing user
     public LoginResponse loginUser(LoginRequest request){
-        //find user by email
+        // Return a generic error so we don't reveal whether an email is registered.
         User user=userRepository.findByEmail(request.getEmail())
-                .orElseThrow(()->new RuntimeException("Invalid email or password"));
-        //verify the entered password with the password in db
+                .orElseThrow(()->new ApiException(
+                        HttpStatus.UNAUTHORIZED,
+                        "Invalid email or password."));
+
+        // Reject login when the supplied password doesn't match.
 
         boolean isMatch= passwordEncoder.matches(request.getPassword(),user.getPasswordHash());
         if(!isMatch){
-            throw new RuntimeException("Invalid email or password");
+            throw new ApiException(
+                    HttpStatus.UNAUTHORIZED,
+                    "Invalid email or password."
+            );
         }
+        // Block login if the account's email hasn't been verified.
         if (!user.isEmailVerified()) {
-            throw new RuntimeException("Please verify your email before logging in.");
+            throw new ApiException(
+                    HttpStatus.FORBIDDEN,
+                    "Please verify your email before logging in."
+            );
         }
+        // Prevent inactive accounts from logging in.
         if(!"ACTIVE".equals(user.getAccountStatus())){
-            throw new RuntimeException("Account is Inactive");
+            throw new ApiException(
+                    HttpStatus.FORBIDDEN,
+                    "Your account is inactive. Please contact support."
+            );
         }
 
 
