@@ -5,6 +5,7 @@ import com.waymate.backend.dto.*;
 import java.util.UUID;
 
 
+import com.waymate.backend.service.EmailOtpService;
 import com.waymate.backend.service.RefreshTokenService;
 import org.springframework.security.core.Authentication;
 import com.waymate.backend.service.UserService;
@@ -21,11 +22,11 @@ import org.springframework.web.bind.annotation.GetMapping;
 @RequestMapping("/api/auth")
 public class AuthController {
     private final UserService userService;
-
+    private final EmailOtpService emailOtpService;
     private final RefreshTokenService refreshTokenService;
-    public AuthController(UserService userService, RefreshTokenService refreshTokenService){
+    public AuthController(UserService userService, RefreshTokenService refreshTokenService, EmailOtpService emailOtpService){
         this.userService=userService;
-
+        this.emailOtpService=emailOtpService;
         this.refreshTokenService=refreshTokenService;
     }
 
@@ -67,5 +68,22 @@ public class AuthController {
         refreshTokenService.revokeRefreshToken(request.getRefreshToken(),userId);
 
         return ResponseEntity.ok("Logged out successfully!");
+    }
+
+    //request OTP
+    @PostMapping("/request-otp")
+    public ResponseEntity<RequestOtpResponse> requestOtp(
+            @RequestBody RequestOtpRequest request) {
+
+        RequestOtpResponse response = emailOtpService.requestOtp(request);
+        return ResponseEntity.ok(response);
+    }
+    //Validate OTP
+    @PostMapping("/verify-otp")
+    public ResponseEntity<VerifyOtpResponse> verifyOtp(
+            @RequestBody VerifyOtpRequest request) {
+
+        VerifyOtpResponse response = emailOtpService.verifyOtp(request);
+        return ResponseEntity.ok(response);
     }
 }

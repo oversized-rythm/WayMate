@@ -96,6 +96,11 @@
 			<scope>runtime</scope>
 		</dependency>
 
+		//Web Client Dependency
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-webflux</artifactId>
+		</dependency>
 	</dependencies>
 
 	<build>

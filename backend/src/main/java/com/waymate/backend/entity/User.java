@@ -36,6 +36,8 @@ public class User {
     @Column(nullable = false)
     private String passwordHash;
 
+    @Column(nullable = false)
+    private boolean emailVerified=false;
     //method that will run before saving a new entity to avoid manually updating the date and time
     @PrePersist
     protected void onCreate(){
@@ -107,5 +109,12 @@ public class User {
         this.passwordHash = passwordHash;
     }
 
+    public boolean isEmailVerified() {
+        return emailVerified;
+    }
+
+    public void setEmailVerified(boolean emailVerified) {
+        this.emailVerified = emailVerified;
+    }
 
 }
