@@ -38,6 +38,8 @@ public class User {
 
     @Column(nullable = false)
     private boolean emailVerified=false;
+    @Column(name = "deleted_at")
+    private LocalDateTime deletedAt;
     //method that will run before saving a new entity to avoid manually updating the date and time
     @PrePersist
     protected void onCreate(){
@@ -117,4 +119,11 @@ public class User {
         this.emailVerified = emailVerified;
     }
 
+    public LocalDateTime getDeletedAt() {
+        return deletedAt;
+    }
+
+    public void setDeletedAt(LocalDateTime deletedAt) {
+        this.deletedAt = deletedAt;
+    }
 }

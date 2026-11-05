@@ -52,7 +52,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                     .map(user->"ACTIVE".equals(user.getAccountStatus()))
                     .orElse(false);
             if(!isActive){
-                filterChain.doFilter(request,response);
+                response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
                 return;
             }
 

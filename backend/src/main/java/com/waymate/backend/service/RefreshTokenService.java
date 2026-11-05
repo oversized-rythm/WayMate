@@ -5,6 +5,7 @@ import com.waymate.backend.entity.RefreshToken;
 import com.waymate.backend.entity.User;
 import com.waymate.backend.repository.RefreshTokenRepository;
 import jakarta.transaction.Transactional;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
 import java.nio.charset.StandardCharsets;
@@ -80,9 +81,12 @@ public class RefreshTokenService {
                 .findByTokenHash(tokenHash)
                 .orElseThrow(()->new RuntimeException("Invalid Refresh Token!"));
 
-        //checking for token revokeation
+        //checking for token revokation or account deletion
         if(refreshToken.isRevoked()){
             throw new RuntimeException("Refresh Token has been Revoked!");
+        }
+        if (!"ACTIVE".equals(refreshToken.getUser().getAccountStatus())) {
+            throw new RuntimeException("Account is inactive or deleted!");
         }
         //checking for token expiration
         if(!refreshToken.getExpiresAt().isAfter(LocalDateTime.now())){
@@ -125,6 +129,7 @@ public class RefreshTokenService {
         //Revoke the token only if not already revoked
         if(!refreshToken.isRevoked()){
             refreshToken.setRevoked(true);
+            refreshToken.setLastUsedAt(LocalDateTime.now());
             refreshTokenRepository.save(refreshToken);
         }
 
@@ -163,5 +168,18 @@ public class RefreshTokenService {
                 "Bearer"
         );
 
+    }
+    // Revoke all existing refresh tokens
+    @Transactional
+    public void revokeAllRefreshTokens(User user) {
+        refreshTokenRepository.revokeAllByUser(user, LocalDateTime.now());
+    }
+
+    // Clean-up refreshed tokens after account deletion
+    @Scheduled(fixedRate = 3600000)
+    public void cleanupRevokedRefreshTokens() {
+        refreshTokenRepository.deleteOldRevokedTokens(
+                LocalDateTime.now().minusDays(30)
+        );
     }
 }

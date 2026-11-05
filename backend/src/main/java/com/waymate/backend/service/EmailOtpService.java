@@ -11,7 +11,7 @@ import com.waymate.backend.repository.UserRepository;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
-import org.springframework.web.reactive.function.client.WebClient;
+
 
 
 import javax.crypto.Mac;
@@ -19,20 +19,20 @@ import javax.crypto.spec.SecretKeySpec;
 import java.nio.charset.StandardCharsets;
 import java.security.GeneralSecurityException;
 import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
+
 import java.security.SecureRandom;
 import java.time.LocalDateTime;
 import java.util.Base64;
-import java.util.List;
+
 import java.util.Locale;
-import java.util.Map;
+
 
 @Service
 public class EmailOtpService {
     private final EmailOtpRepository emailOtpRepository;
-    private final WebClient webClient;
-    private final UserRepository userRepository;
 
+    private final UserRepository userRepository;
+    private final BrevoEmailService brevoEmailService;
     @Value("${brevo.api.key}")
     private String brevoApiKey;
 
@@ -45,9 +45,10 @@ public class EmailOtpService {
     @Value("${otp.hmac.secret}")
     private String otpHmacSecret;
 
-    public EmailOtpService(EmailOtpRepository emailOtpRepository, WebClient webClient, UserRepository userRepository){
+    public EmailOtpService(EmailOtpRepository emailOtpRepository, UserRepository userRepository, BrevoEmailService brevoEmailService){
         this.emailOtpRepository= emailOtpRepository;
-        this.webClient=webClient;
+
+        this.brevoEmailService=brevoEmailService;
         this.userRepository=userRepository;
     }
 
@@ -93,34 +94,14 @@ public class EmailOtpService {
 
     private void sendOtpEmail(String email, String otp){
 
-        //send the HTTP POST request
-        webClient.post()
+        String htmlContent = "<h2>Your WayMate OTP is " + otp +
+                "</h2><p>This code expires in 5 minutes. Do not share it with anyone.</p>";
 
-                //target Brevo's email endpoint
-                .uri("/smtp/email")
-                //authenticating using Brevo API key
-                .header("api-key",brevoApiKey)
-                .header("Content-Type","application/json")
-
-                //provide the sender, recipient, subject, and email content
-                .bodyValue(Map.of(
-                        "sender", Map.of(
-                        "name", senderName,
-                        "email",senderEmail
-                ),
-                        "to", List.of(
-                                Map.of("email", email)
-                        ),
-                        "subject", "Your WayMate Verification Code",
-                        "htmlContent","<h2>Your WayMate Otp is "+ otp +
-                                "</h2><p>This code expires in 5 minutes. Do not share it with anyone.</p>"
-                ))
-
-                //sends the request and retriece the response
-                .retrieve()
-                .bodyToMono(String.class)
-                //wait for brevo's response before continuing
-                .block();
+        brevoEmailService.sendEmail(
+                email,
+                "Your WayMate Verification Code",
+                htmlContent
+        );
     }
 
     //OTP registration process

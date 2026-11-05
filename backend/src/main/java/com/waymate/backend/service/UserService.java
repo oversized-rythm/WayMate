@@ -15,6 +15,7 @@ import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
 import java.util.Locale;
+import java.util.UUID;
 
 @Service
 public class UserService {
@@ -126,4 +127,22 @@ public class UserService {
         return new LoginResponse(accessToken, "Bearer",refreshToken);
     }
 
+    // Account deletion method
+    @Transactional
+    public void deleteAccount(UUID userId){
+        User user=userRepository.findById(userId)
+                .orElseThrow(()->new ApiException(HttpStatus.NOT_FOUND,"User Not Found!"));
+        if(user.getDeletedAt()!=null){
+            throw new ApiException(HttpStatus.GONE, "Account has already been deleted!");
+        }
+        user.setFullName("Deleted User");
+        user.setEmail("deleted" + user.getUserId() + "@waymate.invalid");
+        user.setPhoneNo(null);
+        user.setAvatarUrl(null);
+        user.setPasswordHash(UUID.randomUUID().toString());
+        user.setEmailVerified(false);
+        user.setDeletedAt(LocalDateTime.now());
+        user.setAccountStatus("DELETED");
+        refreshTokenService.revokeAllRefreshTokens(user);
+    }
 }
