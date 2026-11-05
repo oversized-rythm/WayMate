@@ -3,24 +3,53 @@ export const API_BASE_URL = (process.env.EXPO_PUBLIC_API_URL?.trim() || '').repl
 const REQUEST_TIMEOUT_MS = 30_000;
 
 type ApiErrorPayload = Record<string, unknown> | string | null;
+export type AuthTokens = Pick<LoginResponse, 'accessToken' | 'refreshToken' | 'tokenType'>;
+type AuthenticatedSession = AuthTokens & { email: string };
+type SaveRefreshedTokens = (tokens: LoginResponse) => Promise<void>;
 
-async function post<TResponse>(path: string, body: object): Promise<TResponse> {
+class ApiRequestError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+  ) {
+    super(message);
+    this.name = 'ApiRequestError';
+  }
+}
+
+async function request<TResponse>(
+  path: string,
+  method: 'POST' | 'DELETE',
+  body?: object,
+  authorization?: string,
+): Promise<TResponse> {
+  if (!API_BASE_URL) {
+    throw new Error(
+      'API URL is not configured. Set EXPO_PUBLIC_API_URL in mobile/.env and restart Expo.',
+    );
+  }
+
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
 
   try {
     const response = await fetch(`${API_BASE_URL}/api/auth/${path}`, {
-      method: 'POST',
-      headers: { Accept: 'application/json, text/plain', 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
+      method,
+      headers: {
+        Accept: 'application/json, text/plain',
+        ...(body ? { 'Content-Type': 'application/json' } : {}),
+        ...(authorization ? { Authorization: authorization } : {}),
+      },
+      ...(body ? { body: JSON.stringify(body) } : {}),
       signal: controller.signal,
     });
     const responseText = await response.text();
     const payload = parseResponse(responseText);
 
     if (!response.ok) {
-      throw new Error(
+      throw new ApiRequestError(
         getErrorMessage(payload) || `The server returned an error (${response.status}).`,
+        response.status,
       );
     }
 
@@ -41,6 +70,43 @@ async function post<TResponse>(path: string, body: object): Promise<TResponse> {
     throw error;
   } finally {
     clearTimeout(timeoutId);
+  }
+}
+
+function post<TResponse>(path: string, body: object): Promise<TResponse> {
+  return request<TResponse>(path, 'POST', body);
+}
+
+async function authenticatedRequest<TResponse>(
+  path: string,
+  method: 'POST' | 'DELETE',
+  session: AuthenticatedSession,
+  saveRefreshedTokens: SaveRefreshedTokens,
+  body?: object,
+): Promise<TResponse> {
+  const authorization = `${session.tokenType || 'Bearer'} ${session.accessToken}`;
+  try {
+    return await request<TResponse>(path, method, body, authorization);
+  } catch (error) {
+    if (!(error instanceof ApiRequestError) || error.status !== 401) {
+      throw error;
+    }
+
+    const refreshedTokens = await authApi.refresh(session.refreshToken);
+    if (!refreshedTokens.accessToken || !refreshedTokens.refreshToken) {
+      throw new Error('The server did not return valid refreshed tokens.');
+    }
+    await saveRefreshedTokens(refreshedTokens);
+    const retryBody =
+      body && 'refreshToken' in body
+        ? { ...body, refreshToken: refreshedTokens.refreshToken }
+        : body;
+    return request<TResponse>(
+      path,
+      method,
+      retryBody,
+      `${refreshedTokens.tokenType || 'Bearer'} ${refreshedTokens.accessToken}`,
+    );
   }
 }
 
@@ -93,4 +159,25 @@ export const authApi = {
     post<string>('register', { fullName, email, password }),
   login: (email: string, password: string) =>
     post<LoginResponse>('login', { email, password }),
+  refresh: (refreshToken: string) =>
+    post<LoginResponse>('refresh', { refreshToken }),
+  forgotPassword: (email: string) =>
+    post<string>('forgot-password', { email }),
+  resetPassword: (token: string, newPassword: string) =>
+    post<string>('reset-password', { token, newPassword }),
+  deleteAccount: (session: AuthenticatedSession, saveRefreshedTokens: SaveRefreshedTokens) =>
+    authenticatedRequest<string>(
+      'delete-account',
+      'DELETE',
+      session,
+      saveRefreshedTokens,
+    ),
+  logout: (session: AuthenticatedSession, saveRefreshedTokens: SaveRefreshedTokens) =>
+    authenticatedRequest<string>(
+      'logout',
+      'POST',
+      session,
+      saveRefreshedTokens,
+      { refreshToken: session.refreshToken },
+    ),
 };

@@ -89,10 +89,7 @@ export default function LoginScreen() {
         />
         <Pressable
           accessibilityRole="button"
-          onPress={() => {
-            setMessage('Password recovery is not available yet.');
-            setSuccess(false);
-          }}
+          onPress={() => router.push('/forgot-password')}
           style={{ alignSelf: 'flex-end', paddingVertical: 4 }}>
           <Text style={{ color: AuthColors.green, fontSize: 14 }}>Forgot Password?</Text>
         </Pressable>
