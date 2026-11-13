@@ -162,9 +162,11 @@ export const authApi = {
   refresh: (refreshToken: string) =>
     post<LoginResponse>('refresh', { refreshToken }),
   forgotPassword: (email: string) =>
-    post<string>('forgot-password', { email }),
-  resetPassword: (token: string, newPassword: string) =>
-    post<string>('reset-password', { token, newPassword }),
+    post<OtpRequestResponse>('forgot-password', { email }),
+  verifyResetOtp: (email: string, otp: string) =>
+    post<OtpVerificationResponse>('verify-reset-otp', { email, otp }),
+  resetPassword: (email: string, newPassword: string) =>
+    post<string>('reset-password', { email, newPassword }),
   deleteAccount: (session: AuthenticatedSession, saveRefreshedTokens: SaveRefreshedTokens) =>
     authenticatedRequest<string>(
       'delete-account',
