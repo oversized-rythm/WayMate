@@ -5,13 +5,14 @@ import com.waymate.backend.dto.RequestOtpResponse;
 import com.waymate.backend.dto.VerifyOtpRequest;
 import com.waymate.backend.dto.VerifyOtpResponse;
 import com.waymate.backend.entity.EmailOtp;
+import com.waymate.backend.entity.OtpPurpose;
 import com.waymate.backend.exception.ApiException;
 import com.waymate.backend.repository.EmailOtpRepository;
 import com.waymate.backend.repository.UserRepository;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
-
+import org.springframework.transaction.annotation.Transactional;
 
 
 import javax.crypto.Mac;
@@ -105,7 +106,7 @@ public class EmailOtpService {
     }
 
     //OTP registration process
-
+    @Transactional
     public RequestOtpResponse requestOtp(RequestOtpRequest request) {
         String email = request.getEmail().trim().toLowerCase(Locale.ROOT);
         // Prevent registration using an email that already has an account
@@ -120,10 +121,11 @@ public class EmailOtpService {
         EmailOtp emailOtp=new EmailOtp();
         emailOtp.setEmail(email);
         emailOtp.setOtpHash(hashOtp(otp));
+        emailOtp.setPurpose(OtpPurpose.REGISTRATION);
         emailOtp.setExpiresAt(LocalDateTime.now().plusMinutes(5));
 
         //Remove previous OTP records
-        emailOtpRepository.deleteByEmail(email);
+        emailOtpRepository.deleteByEmailAndPurpose(email, OtpPurpose.REGISTRATION);
 
         //Save new OTP
         EmailOtp savedOtp=emailOtpRepository.save(emailOtp);
@@ -144,6 +146,59 @@ public class EmailOtpService {
         return new RequestOtpResponse("OTP sent successfully to your email.");
 
     }
+    @Transactional
+    public RequestOtpResponse requestPasswordResetOtp(String email){
+        String normalizedEmail=email.trim().toLowerCase(Locale.ROOT);
+        // Return a generic response to avoid revealing whether an account exists
+        if (!userRepository.existsByEmail(normalizedEmail)) {
+            return new RequestOtpResponse(
+                    "If an account exists, a password reset OTP has been sent."
+            );
+        }
+        String otp = generateOtp();
+
+        EmailOtp emailOtp = new EmailOtp();
+        emailOtp.setEmail(normalizedEmail);
+        emailOtp.setOtpHash(hashOtp(otp));
+        emailOtp.setPurpose(OtpPurpose.PASSWORD_RESET);
+        emailOtp.setExpiresAt(LocalDateTime.now().plusMinutes(5));
+
+        // Delete only previous password-reset OTPs
+        emailOtpRepository.deleteByEmailAndPurpose(
+                normalizedEmail, OtpPurpose.PASSWORD_RESET
+        );
+
+        EmailOtp savedOtp = emailOtpRepository.save(emailOtp);
+
+        try {
+            String htmlContent = """
+                <h2>WayMate Password Reset</h2>
+                <p>Your password reset OTP is <strong>%s</strong>.</p>
+                <p>This code expires in 5 minutes.</p>
+                <p>If you didn't request this, please ignore this email.</p>
+                """.formatted(otp);
+
+            brevoEmailService.sendEmail(
+                    normalizedEmail,
+                    "WayMate Password Reset OTP",
+                    htmlContent
+            );
+
+        } catch (Exception e) {
+            emailOtpRepository.delete(savedOtp);
+
+            throw new ApiException(
+                    HttpStatus.BAD_GATEWAY,
+                    "Unable to send password reset OTP. Please try again later."
+            );
+        }
+
+        return new RequestOtpResponse(
+                "If an account exists, a password reset OTP has been sent."
+        );
+    }
+
+
 
     //Verify the OTP entered by user
     public VerifyOtpResponse verifyOtp(VerifyOtpRequest request){
@@ -158,7 +213,7 @@ public class EmailOtpService {
         }
         //find the latest OTP record
         EmailOtp emailOtp= emailOtpRepository
-                .findTopByEmailOrderByCreatedAtDesc(email)
+                .findTopByEmailAndPurposeOrderByCreatedAtDesc(email, OtpPurpose.REGISTRATION)
                 // Return 404 when no OTP record exists for the supplied email.
                 .orElseThrow(() -> new ApiException(
                         HttpStatus.NOT_FOUND,
@@ -210,5 +265,66 @@ public class EmailOtpService {
         emailOtpRepository.save(emailOtp);
 
         return new VerifyOtpResponse("Email verified successfully!", true, email);
+    }
+
+    public VerifyOtpResponse verifyPasswordResetOtp(VerifyOtpRequest request) {
+        String email = request.getEmail().trim().toLowerCase(Locale.ROOT);
+
+        if (request.getOtp() == null || !request.getOtp().matches("\\d{6}")) {
+            throw new ApiException(
+                    HttpStatus.BAD_REQUEST,
+                    "OTP must be exactly 6 digits."
+            );
+        }
+
+        EmailOtp emailOtp = emailOtpRepository
+                .findTopByEmailAndPurposeOrderByCreatedAtDesc(email, OtpPurpose.PASSWORD_RESET)
+                .orElseThrow(() -> new ApiException(
+                        HttpStatus.NOT_FOUND,
+                        "No password reset OTP found. Please request a new OTP."
+                ));
+
+        if (emailOtp.isVerified()) {
+            throw new ApiException(
+                    HttpStatus.CONFLICT,
+                    "OTP already verified!"
+            );
+        }
+
+        if (!emailOtp.getExpiresAt().isAfter(LocalDateTime.now())) {
+            throw new ApiException(
+                    HttpStatus.GONE,
+                    "OTP has expired. Please request a new OTP."
+            );
+        }
+
+        if (emailOtp.getAttempts() >= 5) {
+            throw new ApiException(
+                    HttpStatus.TOO_MANY_REQUESTS,
+                    "Maximum OTP attempts exceeded. Please request a new OTP."
+            );
+        }
+
+        String enteredOtpHash = hashOtp(request.getOtp());
+        boolean isMatch = MessageDigest.isEqual(
+                emailOtp.getOtpHash().getBytes(StandardCharsets.UTF_8),
+                enteredOtpHash.getBytes(StandardCharsets.UTF_8)
+        );
+
+        if (!isMatch) {
+            emailOtp.setAttempts(emailOtp.getAttempts() + 1);
+            emailOtpRepository.save(emailOtp);
+            throw new ApiException(
+                    HttpStatus.BAD_REQUEST,
+                    "Invalid OTP. Please try again."
+            );
+        }
+
+        //mark otp as verified
+        emailOtp.setVerified(true);
+        emailOtp.setExpiresAt(LocalDateTime.now().plusMinutes(10));
+        emailOtpRepository.save(emailOtp);
+
+        return new VerifyOtpResponse("OTP verified successfully! You may now reset your password.", true, email);
     }
 }

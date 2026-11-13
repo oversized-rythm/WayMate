@@ -35,8 +35,12 @@ public class EmailOtp {
     @Column(nullable = false)
     private LocalDateTime createdAt;
 
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false)
+    private OtpPurpose purpose;
     public EmailOtp() {
     }
+
 
     @PrePersist
     protected void onCreate() {
@@ -99,5 +103,14 @@ public class EmailOtp {
     public void setRegistrationExpiresAt(LocalDateTime registrationExpiresAt) {
         this.registrationExpiresAt = registrationExpiresAt;
     }
+
+    public OtpPurpose getPurpose() {
+        return purpose;
+    }
+
+    public void setPurpose(OtpPurpose purpose) {
+        this.purpose = purpose;
+    }
+
 }
 

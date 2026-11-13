@@ -14,6 +14,7 @@ import com.waymate.backend.service.UserService;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.parameters.P;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
@@ -88,22 +89,27 @@ public class AuthController {
         return ResponseEntity.ok(response);
     }
 
-    // Request a password-reset link
+    // Request a password-reset otp email
     @PostMapping("/forgot-password")
-    public ResponseEntity<String> forgotPassword(
+    public ResponseEntity<RequestOtpResponse> forgotPassword(
             @Valid @RequestBody ForgotPasswordRequest request){
-
-        //process the password-reset request
-        passwordResetService.requestPasswordReset(request.getEmail());
-        return ResponseEntity.ok("A password-reset link will be sent.");
+        RequestOtpResponse response=passwordResetService.requestPasswordResetOtp(request.getEmail());
+        return ResponseEntity.ok(response);
     }
 
-    // Reset the password
+    //Verify the password-reset otp
+    @PostMapping("/verify-reset-otp")
+    public ResponseEntity<VerifyOtpResponse>verifyResetOtp(@Valid @RequestBody VerifyOtpRequest request){
+        VerifyOtpResponse response=passwordResetService.verifyPasswordResetOtp(request);
+        return ResponseEntity.ok(response);
+
+    }
+    // Reset the password after otp verification
     @PostMapping("/reset-password")
     public ResponseEntity<String>resetPassword(
             @Valid @RequestBody ResetPasswordRequest request){
         passwordResetService.resetPassword(
-                request.getToken(),
+                request.getEmail(),
                 request.getNewPassword()
         );
         return ResponseEntity.ok("Password reset successfully!");

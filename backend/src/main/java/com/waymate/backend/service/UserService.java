@@ -4,6 +4,7 @@ import com.waymate.backend.dto.LoginRequest;
 import com.waymate.backend.dto.LoginResponse;
 import com.waymate.backend.dto.RegisterRequest;
 import com.waymate.backend.entity.EmailOtp;
+import com.waymate.backend.entity.OtpPurpose;
 import com.waymate.backend.entity.User;
 import com.waymate.backend.exception.ApiException;
 import com.waymate.backend.repository.EmailOtpRepository;
@@ -50,7 +51,7 @@ public class UserService {
         }
         // Ensure an OTP record exists for this email.
         EmailOtp emailOtp=emailOtpRepository
-                .findTopByEmailOrderByCreatedAtDesc(email)
+                .findTopByEmailAndPurposeOrderByCreatedAtDesc(email, OtpPurpose.REGISTRATION)
                 .orElseThrow(()->new ApiException(
                         HttpStatus.FORBIDDEN,
                         "Please verify your email first."));
