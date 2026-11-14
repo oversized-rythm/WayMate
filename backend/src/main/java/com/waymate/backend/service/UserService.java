@@ -91,14 +91,22 @@ public class UserService {
 
     //login an existing user
     public LoginResponse loginUser(LoginRequest request){
+        String email = request.getEmail().trim().toLowerCase(Locale.ROOT);
         // Return a generic error so we don't reveal whether an email is registered.
-        User user=userRepository.findByEmail(request.getEmail())
+        User user=userRepository.findByEmail(email)
                 .orElseThrow(()->new ApiException(
                         HttpStatus.UNAUTHORIZED,
                         "Invalid email or password."));
 
-        // Reject login when the supplied password doesn't match.
 
+        // Block password login if this account was created via Google SSO and has no password set
+        if (user.getPasswordHash() == null) {
+            throw new ApiException(
+                    HttpStatus.UNAUTHORIZED,
+                    "This account uses Google Sign-In. Please continue with Google."
+            );
+        }
+        // Reject login when the supplied password doesn't match.
         boolean isMatch= passwordEncoder.matches(request.getPassword(),user.getPasswordHash());
         if(!isMatch){
             throw new ApiException(
@@ -144,6 +152,8 @@ public class UserService {
         user.setEmailVerified(false);
         user.setDeletedAt(LocalDateTime.now());
         user.setAccountStatus("DELETED");
+
+        user.setGoogleId(null);
         refreshTokenService.revokeAllRefreshTokens(user);
     }
 }

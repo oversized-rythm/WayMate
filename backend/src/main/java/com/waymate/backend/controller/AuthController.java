@@ -5,12 +5,9 @@ import com.waymate.backend.dto.*;
 import java.util.UUID;
 
 
-import com.waymate.backend.service.EmailOtpService;
-import com.waymate.backend.service.PasswordResetService;
-import com.waymate.backend.service.RefreshTokenService;
+import com.waymate.backend.service.*;
 import jakarta.validation.Valid;
 import org.springframework.security.core.Authentication;
-import com.waymate.backend.service.UserService;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -24,11 +21,13 @@ public class AuthController {
     private final EmailOtpService emailOtpService;
     private final RefreshTokenService refreshTokenService;
     private final PasswordResetService passwordResetService;
-    public AuthController(UserService userService, RefreshTokenService refreshTokenService, EmailOtpService emailOtpService, PasswordResetService passwordResetService){
+    private final GoogleAuthService googleAuthService;
+    public AuthController(UserService userService, RefreshTokenService refreshTokenService, EmailOtpService emailOtpService, PasswordResetService passwordResetService, GoogleAuthService googleAuthService){
         this.userService=userService;
         this.emailOtpService=emailOtpService;
         this.refreshTokenService=refreshTokenService;
         this.passwordResetService=passwordResetService;
+        this.googleAuthService=googleAuthService;
     }
 
     //Register a new User
@@ -121,5 +120,13 @@ public class AuthController {
         UUID userId=(UUID)authentication.getPrincipal();
         userService.deleteAccount(userId);
         return ResponseEntity.ok("Account Deleted Successfully!");
+    }
+
+    //Google SSO authenticate and register
+    @PostMapping("/google")
+    public ResponseEntity<LoginResponse>googleLogin(@Valid @RequestBody GoogleLoginRequest request){
+        //Delegates token verification and user lookup/creation to GoogleAuthService
+        LoginResponse response=googleAuthService.authenticateWithGoogle(request.getIdToken());
+        return ResponseEntity.ok(response);
     }
 }

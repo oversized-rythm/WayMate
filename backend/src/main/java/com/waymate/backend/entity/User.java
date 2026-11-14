@@ -33,13 +33,20 @@ public class User {
     private LocalDateTime updatedAt;
     private String accountStatus;
 
-    @Column(nullable = false)
+
     private String passwordHash;
 
     @Column(nullable = false)
     private boolean emailVerified=false;
     @Column(name = "deleted_at")
     private LocalDateTime deletedAt;
+
+    @Column(unique = true)
+    private String googleId;
+
+    @Column(nullable = false)
+    private String authProvider="LOACAL";
+
     //method that will run before saving a new entity to avoid manually updating the date and time
     @PrePersist
     protected void onCreate(){
@@ -125,5 +132,21 @@ public class User {
 
     public void setDeletedAt(LocalDateTime deletedAt) {
         this.deletedAt = deletedAt;
+    }
+
+    public String getGoogleId() {
+        return googleId;
+    }
+
+    public void setGoogleId(String googleId) {
+        this.googleId = googleId;
+    }
+
+    public String getAuthProvider() {
+        return authProvider;
+    }
+
+    public void setAuthProvider(String authProvider) {
+        this.authProvider = authProvider;
     }
 }
